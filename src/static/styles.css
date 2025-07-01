@@ -36,9 +36,6 @@ main {
 }
 
 @media (min-width: 768px) {
-  main {
-    grid-template-columns: 2fr 1fr;
-  }
 }
 
 section {
@@ -46,7 +43,7 @@ section {
   padding: 20px;
   border-radius: 5px;
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-  width: 100%;
+  /* Removed width: 100%; to avoid conflict with padding and border */
   max-width: 500px;
 }
 
@@ -86,7 +83,7 @@ section h3 {
 
 .form-group input,
 .form-group select {
-  width: 100%;
+  /* Removed width: 100%; to avoid conflict with padding and border */
   padding: 10px;
   border: 1px solid #ddd;
   border-radius: 4px;
@@ -181,9 +178,20 @@ footer {
   /* moved padding and border-radius to .participants-common */
 }
 
-/* Apply shared styles */
-.participants-section,
-.no-participants {
-  composes: participants-common;
+/* Removed composes property as it is not valid CSS */
+
+.unregister-btn {
+  margin-left: 10px;
+  background-color: #c62828;
+  color: white;
+  border: none;
+  padding: 4px 10px;
+  font-size: 13px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s;
 }
 
+.unregister-btn:hover {
+  background-color: #a31515;
+}

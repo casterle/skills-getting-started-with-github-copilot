@@ -1,0 +1,7 @@
+{
+  // Place your settings in this file to overwrite default and user settings.
+  "github.copilot.advanced": {
+    "model": "gpt-4.1"
+  },
+  "github.copilot-chat.model": "gpt-4.1"
+}

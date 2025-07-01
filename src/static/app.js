@@ -4,15 +4,25 @@ document.addEventListener("DOMContentLoaded", () => {
   const signupForm = document.getElementById("signup-form");
   const messageDiv = document.getElementById("message");
 
-  
+  // Helper: Sanitize text for HTML
+  function sanitize(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
   // Function to fetch activities from API
   async function fetchActivities() {
     try {
-      const response = await fetch("/activities");
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 7000); // 7s timeout
+      const response = await fetch("/activities", { signal: controller.signal });
+      clearTimeout(timeout);
       const activities = await response.json();
 
-      // Clear loading message
+      // Clear loading message and dropdown options
       activitiesList.innerHTML = "";
+      activitySelect.innerHTML = '<option value="">-- Select an activity --</option>';
 
       // Populate activities list
       Object.entries(activities).forEach(([name, details]) => {
@@ -21,38 +31,37 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const spotsLeft = details.max_participants - details.participants.length;
 
-        // Build participants section safely
-        let participantsSection;
+        // Build participants list HTML with unregister button
+        let participantsHTML = "";
         if (details.participants.length > 0) {
-          participantsSection = document.createElement("div");
-          participantsSection.className = "participants-section";
-          const strong = document.createElement("strong");
-          strong.textContent = "Participants:";
-          participantsSection.appendChild(strong);
-
-          const ul = document.createElement("ul");
-          ul.className = "participants-list";
-          details.participants.forEach(email => {
-            const li = document.createElement("li");
-            li.textContent = email;
-            ul.appendChild(li);
-          });
-          participantsSection.appendChild(ul);
+          participantsHTML = `
+            <div class="participants-section">
+              <strong>Participants:</strong>
+              <ul class="participants-list">
+                ${details.participants.map(email => `
+                  <li>
+                    ${sanitize(email)}
+                    <button class="unregister-btn" data-activity="${sanitize(name)}" data-email="${sanitize(email)}" title="Unregister ${sanitize(email)}">Unregister</button>
+                  </li>
+                `).join("")}
+              </ul>
+            </div>
+          `;
         } else {
-          participantsSection = document.createElement("div");
-          participantsSection.className = "participants-section no-participants";
-          const em = document.createElement("em");
-          em.textContent = "No participants yet.";
-          participantsSection.appendChild(em);
+          participantsHTML = `
+            <div class="participants-section no-participants">
+              <em>No participants yet.</em>
+            </div>
+          `;
         }
 
         activityCard.innerHTML = `
-          <h4>${name}</h4>
-          <p>${details.description}</p>
-          <p><strong>Schedule:</strong> ${details.schedule}</p>
+          <h4>${sanitize(name)}</h4>
+          <p>${sanitize(details.description)}</p>
+          <p><strong>Schedule:</strong> ${sanitize(details.schedule)}</p>
           <p><strong>Availability:</strong> ${spotsLeft} spots left</p>
+          ${participantsHTML}
         `;
-        activityCard.appendChild(participantsSection);
 
         activitiesList.appendChild(activityCard);
 
@@ -63,9 +72,27 @@ document.addEventListener("DOMContentLoaded", () => {
         activitySelect.appendChild(option);
       });
     } catch (error) {
-      activitiesList.innerHTML = "<p>Failed to load activities. Please try again later.</p>";
-      console.error("Error fetching activities:", error);
+      if (error.name === 'AbortError') {
+        activitiesList.innerHTML = "<p>Request timed out. Please check your connection and try again.</p>";
+      } else if (!navigator.onLine) {
+        activitiesList.innerHTML = "<p>You appear to be offline. Please check your internet connection.</p>";
+      } else {
+        activitiesList.innerHTML = "<p>Failed to load activities. Please try again later.</p>";
+        console.error("Error fetching activities:", error);
+      }
     }
+  }
+
+  // Helper: Set ARIA live for message
+  function showMessage(text, type = "info") {
+    messageDiv.textContent = text;
+    messageDiv.className = type;
+    messageDiv.setAttribute("role", "alert");
+    messageDiv.setAttribute("aria-live", "assertive");
+    messageDiv.classList.remove("hidden");
+    setTimeout(() => {
+      messageDiv.classList.add("hidden");
+    }, 5000);
   }
 
   // Handle form submission
@@ -75,36 +102,59 @@ document.addEventListener("DOMContentLoaded", () => {
     const email = document.getElementById("email").value;
     const activity = document.getElementById("activity").value;
 
+    // Client-side input sanitization (basic)
+    if (!email || !activity) {
+      showMessage("Please fill out all fields.", "error");
+      return;
+    }
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+      showMessage("Please enter a valid email address.", "error");
+      return;
+    }
+
     try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 7000); // 7s timeout
       const response = await fetch(
         `/activities/${encodeURIComponent(activity)}/signup?email=${encodeURIComponent(email)}`,
         {
           method: "POST",
+          signal: controller.signal
         }
       );
+      clearTimeout(timeout);
 
       const result = await response.json();
+      const errorType = response.headers.get("X-Error-Type");
 
       if (response.ok) {
-        messageDiv.textContent = result.message;
-        messageDiv.className = "success";
+        showMessage(result.message, "success");
         signupForm.reset();
+      } else if (response.status === 409) {
+        // Handle specific 409 errors
+        if (errorType === "activity_full") {
+          showMessage("This activity is full. Please choose another.", "error");
+        } else if (errorType === "already_registered") {
+          showMessage("You are already registered for this activity.", "error");
+        } else {
+          showMessage(result.detail || "A conflict occurred.", "error");
+        }
+      } else if (response.status === 422) {
+        showMessage(result.detail || "Invalid input.", "error");
+      } else if (response.status === 429) {
+        showMessage(result.detail || "Too many requests. Please try again later.", "error");
       } else {
-        messageDiv.textContent = result.detail || "An error occurred";
-        messageDiv.className = "error";
+        showMessage(result.detail || "An error occurred", "error");
       }
-
-      messageDiv.classList.remove("hidden");
-
-      // Hide message after 5 seconds
-      setTimeout(() => {
-        messageDiv.classList.add("hidden");
-      }, 5000);
     } catch (error) {
-      messageDiv.textContent = "Failed to sign up. Please try again.";
-      messageDiv.className = "error";
-      messageDiv.classList.remove("hidden");
-      console.error("Error signing up:", error);
+      if (error.name === 'AbortError') {
+        showMessage("Request timed out. Please check your connection and try again.", "error");
+      } else if (!navigator.onLine) {
+        showMessage("You appear to be offline. Please check your internet connection.", "error");
+      } else {
+        showMessage("Failed to sign up. Please try again.", "error");
+        console.error("Error signing up:", error);
+      }
     }
   });
 
